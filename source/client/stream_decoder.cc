@@ -118,7 +118,7 @@ void StreamDecoder::onPoolReady(Envoy::Http::RequestEncoder& encoder,
   stream_info_.upstreamInfo()->upstreamTiming().onFirstUpstreamTxByteSent(
       time_source_); // XXX(oschaaf): is this correct?
   const Envoy::Http::Status status =
-      encoder.encodeHeaders(*request_headers_, false);
+      encoder.encodeHeaders(*request_headers_, request_body_size_ == 0);
   if (!status.ok()) {
     ENVOY_LOG_EVERY_POW_2(error,
                           "Request header encoding failure. Might be missing one or more required "

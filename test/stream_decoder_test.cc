@@ -27,7 +27,7 @@ public:
         request_headers_(std::make_shared<Envoy::Http::TestRequestHeaderMapImpl>(
             std::initializer_list<std::pair<std::string, std::string>>(
                 {{":method", "GET"}, {":path", "/foo"}}))),
-        request_body_("{\"message\":\"hello\"}"),
+        request_body_(std::string("{\"message\":\"hello\"}")),
         tracer_(std::make_unique<Envoy::Tracing::NullTracer>()),
         test_header_(std::make_unique<Envoy::Http::TestResponseHeaderMapImpl>(
             std::initializer_list<std::pair<std::string, std::string>>({{":status", "200"}}))),
@@ -53,7 +53,7 @@ public:
   StreamingStatistic response_body_size_statistic_;
   StreamingStatistic origin_latency_statistic_;
   HeaderMapPtr request_headers_;
-  std:string& request_body_;
+  std::string request_body_;
   uint64_t stream_decoder_completion_callbacks_{0};
   uint64_t pool_failures_{0};
   uint64_t stream_decoder_export_latency_callbacks_{0};
@@ -116,35 +116,24 @@ TEST_F(StreamDecoderTest, TrailerTest) {
 }
 
 TEST_F(StreamDecoderTest, LatencyIsNotMeasured) {
-    bool is_complete = false;
-    auto decoder = new StreamDecoder(
-      *dispatcher_, time_system_, *this, [&is_complete](bool, bool) { is_complete = true; },
-      connect_statistic_, latency_statistic_, response_header_size_statistic_,
-      response_body_size_statistic_, origin_latency_statistic_, 
-      request_headers_, request_body_, false, 0,
-      random_generator_, tracer_, "");
-     Envoy::Http::TestRequestHeaderMapImpl request_headers{
-        {":method", "POST"},
-        {":path", "/test"},
-        {":authority", "localhost"},
-        {"x-json-body", R"({"message": "hello"})"}  // Ensure json_body is set
-    };
-    Envoy::Http::MockRequestEncoder stream_encoder;
-    EXPECT_CALL(stream_encoder, getStream());
-
-    Envoy::Upstream::HostDescriptionConstSharedPtr ptr;
-    NiceMock<Envoy::StreamInfo::MockStreamInfo> stream_info;
-
-    EXPECT_CALL(stream_encoder, encodeHeaders(_, _)).Times(1);
-    EXPECT_CALL(stream_encoder, encodeData(_, true)).Times(1);
-
-    decoder->onPoolReady(stream_encoder, ptr, stream_info,
+  auto decoder = new StreamDecoder(
+    *dispatcher_, time_system_, *this, [](bool, bool) {},
+    connect_statistic_, latency_statistic_, response_header_size_statistic_,
+    response_body_size_statistic_, origin_latency_statistic_, 
+    request_headers_, request_body_, false, 0,
+    random_generator_, tracer_, "");
+  Envoy::Http::MockRequestEncoder stream_encoder;
+  EXPECT_CALL(stream_encoder, getStream());
+  Envoy::Upstream::HostDescriptionConstSharedPtr ptr;
+  NiceMock<Envoy::StreamInfo::MockStreamInfo> stream_info;
+  EXPECT_CALL(stream_encoder,
+              encodeHeaders(Envoy::HeaderMapEqualRef(request_headers_.get()), true));
+  decoder->onPoolReady(stream_encoder, ptr, stream_info,
                        {} /*absl::optional<Envoy::Http::Protocol> protocol*/);
-
-    decoder->decodeHeaders(std::move(test_header_), true);
-    EXPECT_EQ(0, connect_statistic_.count());
-    EXPECT_EQ(0, latency_statistic_.count());
-    EXPECT_EQ(0, stream_decoder_export_latency_callbacks_);
+  decoder->decodeHeaders(std::move(test_header_), true);
+  EXPECT_EQ(0, connect_statistic_.count());
+  EXPECT_EQ(0, latency_statistic_.count());
+  EXPECT_EQ(0, stream_decoder_export_latency_callbacks_);
 }
 
 TEST_F(StreamDecoderTest, LatencyIsMeasured) {
@@ -168,7 +157,7 @@ TEST_F(StreamDecoderTest, LatencyIsMeasured) {
   auto decoder = new StreamDecoder(
       *dispatcher_, time_system_, *this, [](bool, bool) {}, connect_statistic_, latency_statistic_,
       response_header_size_statistic_, response_body_size_statistic_, origin_latency_statistic_,
-      request_header, true, 0, random_generator_, tracer_, "");
+      request_header, request_body_, true, 0, random_generator_, tracer_, "");
   Envoy::Http::MockRequestEncoder stream_encoder;
   EXPECT_CALL(stream_encoder, getStream());
   Envoy::Upstream::HostDescriptionConstSharedPtr ptr;

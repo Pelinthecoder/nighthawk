@@ -98,6 +98,20 @@ TEST_F(StreamDecoderTest, HeaderWithBodyTest) {
   EXPECT_EQ(2, called_data_);
 }
 
+TEST_F(StreamDecoderTest, JsonPayloadDelivery) {
+  std::string expected_body = R"({"Message": "Hello"})";
+  Envoy::Buffer::OwnedImpl buf(expected_body); // Use JSON payload
+   auto decoder = new StreamDecoder(
+    *dispatcher_, time_system_, *this, [](bool, bool) {},
+    connect_statistic_, latency_statistic_, response_header_size_statistic_,
+    response_body_size_statistic_, origin_latency_statistic_, 
+    request_headers_, request_body_, false, 0,
+    random_generator_, tracer_, "");
+    decoder->decodeData(buf, true);
+  EXPECT_EQ(1, stream_decoder_completion_callbacks_);
+  EXPECT_EQ(1, called_data_); // Expect only one call to decodeData
+}
+
 TEST_F(StreamDecoderTest, TrailerTest) {
   bool is_complete = false;
   auto decoder = new StreamDecoder(

@@ -112,8 +112,7 @@ void StreamDecoder::onPoolFailure(Envoy::Http::ConnectionPool::PoolFailureReason
 void StreamDecoder::onPoolReady(Envoy::Http::RequestEncoder& encoder,
                                 Envoy::Upstream::HostDescriptionConstSharedPtr,
                                 Envoy::StreamInfo::StreamInfo&,
-                                absl::optional<Envoy::Http::Protocol>) 
-  ENVOY_LOG_MISC(debug, "onPoolReady: Called with request headers: {}", *request_headers_);
+                                absl::optional<Envoy::Http::Protocol>) {
   // Make sure we hear about stream resets on the encoder.
   encoder.getStream().addCallbacks(*this);
   stream_info_.upstreamInfo()->upstreamTiming().onFirstUpstreamTxByteSent(
@@ -126,32 +125,30 @@ void StreamDecoder::onPoolReady(Envoy::Http::RequestEncoder& encoder,
                           "HTTP headers in {}.",
                           *request_headers_);
   }
-  std::string json_body = "";
-  auto json_body_header = request_headers_->get(Envoy::Http::LowerCaseString("x-json-body"));
-  if (json_body_header.empty()) {
-     ENVOY_LOG_MISC(debug, "onPoolReady: Found x-json-body header with value: {}", 
-                       json_body_header->value().getStringView());
-    json_body = json_body_header[0]->value().getStringView();
-  } else {
-        ENVOY_LOG_MISC(debug, "onPoolReady: No x-json-body header found in request_headers_");
+  if (request_body_size_ > 0) {
+    if (request_body_.empty()) {
+      // TODO(https://github.com/envoyproxy/nighthawk/issues/138): This will show up in the zipkin UI
+      // as 'response_size'. We add it here, optimistically assuming it will all be send. Ideally,
+      // we'd track the encoder events of the stream to dig up and forward more information. For now,
+      // we take the risk of erroneously reporting that we did send all the bytes, instead of always
+      // reporting 0 bytes.
+      // Revisit this when we have non-uniform request distributions and on-the-fly reconfiguration in
+      // place. The string size below MUST match the cap we put on RequestOptions::request_body_size
+      // in api/client/options.proto!
+      auto* fragment = new Envoy::Buffer::BufferFragmentImpl(
+          staticUploadContent().data(), request_body_size_,
+          [](const void*, size_t, const Envoy::Buffer::BufferFragmentImpl* frag) { delete frag; });
+      Envoy::Buffer::OwnedImpl body_buffer;
+      body_buffer.addBufferFragment(*fragment);
+      encoder.encodeData(body_buffer, true);
+    } else {
+       auto* fragment = new Envoy::Buffer::BufferFragmentImpl(
+          request_body_.data(), request_body_size_,
+          [](const void*, size_t, const Envoy::Buffer::BufferFragmentImpl* frag) { delete frag; });
+       Envoy::Buffer::OwnedImpl body_buffer;
+       body_buffer.addBufferFragment(*fragment);
+       encoder.encodeData(body_buffer, true);
     }
-   ENVOY_LOG_MISC(debug, "onPoolReady: Final json_body content: '{}'", json_body);
-  if (json_body.empty()) {
-    // TODO(https://github.com/envoyproxy/nighthawk/issues/138): This will show up in the zipkin UI
-    // as 'response_size'. We add it here, optimistically assuming it will all be send. Ideally,
-    // we'd track the encoder events of the stream to dig up and forward more information. For now,
-    // we take the risk of erroneously reporting that we did send all the bytes, instead of always
-    // reporting 0 bytes.
-    stream_info_.addBytesReceived(json_body.size());
-    // Revisit this when we have non-uniform request distributions and on-the-fly reconfiguration in
-    // place. The string size below MUST match the cap we put on RequestOptions::request_body_size
-    // in api/client/options.proto!
-    auto* fragment = new Envoy::Buffer::BufferFragmentImpl(
-        staticUploadContent().data(), request_body_size_,
-        [](const void*, size_t, const Envoy::Buffer::BufferFragmentImpl* frag) { delete frag; });
-    Envoy::Buffer::OwnedImpl body_buffer;
-    body_buffer.addBufferFragment(*fragment);
-    encoder.encodeData(body_buffer, true);
   }
   request_start_ = time_source_.monotonicTime();
   if (measure_latencies_) {

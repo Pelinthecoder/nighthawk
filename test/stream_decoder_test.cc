@@ -98,20 +98,6 @@ TEST_F(StreamDecoderTest, HeaderWithBodyTest) {
   EXPECT_EQ(2, called_data_);
 }
 
-TEST_F(StreamDecoderTest, JsonPayloadDelivery) {
-  std::string expected_body = R"({"Message": "Hello"})";
-  Envoy::Buffer::OwnedImpl buf(expected_body); // Use JSON payload
-   auto decoder = new StreamDecoder(
-    *dispatcher_, time_system_, *this, [](bool, bool) {},
-    connect_statistic_, latency_statistic_, response_header_size_statistic_,
-    response_body_size_statistic_, origin_latency_statistic_, 
-    request_headers_, request_body_, false, 0,
-    random_generator_, tracer_, "");
-    decoder->decodeData(buf, true);
-  EXPECT_EQ(1, stream_decoder_completion_callbacks_);
-  EXPECT_EQ(1, called_data_); // Expect only one call to decodeData
-}
-
 TEST_F(StreamDecoderTest, TrailerTest) {
   bool is_complete = false;
   auto decoder = new StreamDecoder(
@@ -205,6 +191,29 @@ TEST_F(StreamDecoderTest, LatencyIsMeasured) {
       stream_encoder,
       encodeHeaders(Envoy::HeaderMapEqualRef(request_headers_.get()), false));
   EXPECT_CALL(stream_encoder, encodeData(testing::Ref(buf), true));
+  decoder->onPoolReady(
+      stream_encoder, ptr, stream_info,
+      {} /*absl::optional<Envoy::Http::Protocol> protocol*/);
+  decoder->decodeHeaders(std::move(test_header_), false);
+}
+
+TEST_F(StreamDecoderTest, NonEmptyRequestBodyWithNonZeroRequestBodySize) {
+  std::string json_body = R"({"Message": "Hello"})";
+  Envoy::Buffer::OwnedImpl json_buf(json_body);
+  auto decoder = new StreamDecoder(
+      *dispatcher_, time_system_, *this, [](bool, bool) {},
+      connect_statistic_, latency_statistic_, response_header_size_statistic_,
+      response_body_size_statistic_, origin_latency_statistic_,
+      request_headers_, json_body , false, 4 , random_generator_, tracer_,
+      "");
+  Envoy::Http::MockRequestEncoder stream_encoder;
+  EXPECT_CALL(stream_encoder, getStream());
+  Envoy::Upstream::HostDescriptionConstSharedPtr ptr;
+  NiceMock<Envoy::StreamInfo::MockStreamInfo> stream_info;
+  EXPECT_CALL(
+      stream_encoder,
+      encodeHeaders(Envoy::HeaderMapEqualRef(request_headers_.get()), false));
+  EXPECT_CALL(stream_encoder, encodeData(testing::Ref(json_buf), true));
   decoder->onPoolReady(
       stream_encoder, ptr, stream_info,
       {} /*absl::optional<Envoy::Http::Protocol> protocol*/);

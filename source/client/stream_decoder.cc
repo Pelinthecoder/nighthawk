@@ -142,11 +142,8 @@ void StreamDecoder::onPoolReady(Envoy::Http::RequestEncoder& encoder,
       body_buffer.addBufferFragment(*fragment);
       encoder.encodeData(body_buffer, true);
     } else {
-       auto* fragment = new Envoy::Buffer::BufferFragmentImpl(
-          request_body_.data(), request_body_size_,
-          [](const void*, size_t, const Envoy::Buffer::BufferFragmentImpl* frag) { delete frag; });
        Envoy::Buffer::OwnedImpl body_buffer;
-       body_buffer.addBufferFragment(*fragment);
+       body_buffer.add(absl::string_view(request_body_));
        encoder.encodeData(body_buffer, true);
     }
   }
